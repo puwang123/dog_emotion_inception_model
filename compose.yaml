@@ -1,0 +1,6 @@
+services:
+  dog-emotion:
+    build: .
+    gpus: all
+    volumes:
+      - ./images:/images:ro
