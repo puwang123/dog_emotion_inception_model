@@ -1,0 +1,3 @@
+# Install a CUDA-compatible torch/torchvision pair from requirements.txt first
+# when GPU inference is needed. This dependency also supports YOLOv8 models.
+ultralytics==8.4.134

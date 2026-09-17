@@ -62,6 +62,110 @@ Commit and push `hubconf.py`, `dog_emotion_hub.py`, and the documentation to
 `main` before using the GitHub-loading example. If repository code is already
 cached, add `force_reload=True` once to refresh it. No model re-upload is required.
 
+### Dog-face detection
+
+Both models live in the same Hub repository but load independently:
+
+| Entry point | Return value | Input / output |
+|---|---|---|
+| `dog_emotion_convnext` | `(model, transform)` | Normalized image tensors → four emotion logits |
+| `dog_face_yolov8n` | Ultralytics YOLO detector | Images → face boxes, scores, class IDs |
+| `dog_models` | Dictionary containing both models and the emotion transform | One call loads both independent components |
+
+Install both model families' dependencies:
+
+```bash
+pip install -r requirements.txt -r requirements-face.txt
+```
+
+**Release setup required:** upload the existing `model/dog_face_yolov8n.pt`
+as an asset named `dog_face_yolov8n.pt` to the `v1.0.0` GitHub release.
+Its SHA-256 must be
+`457ffa4c43ada20d9bbbcd0e2fd3dc678f71f8464a0ee5a687716648c43757bf`.
+The file is ignored by Git; the hosted Hub loader downloads it from releases,
+not from the repository. A local Hub load uses the local file automatically.
+
+```python
+face_detector = torch.hub.load(
+    "puwang123/dog_emotion_inception_model:main",
+    "dog_face_yolov8n",
+    device="cuda",
+    trust_repo=True,
+)
+results = face_detector.predict(
+    "dog.jpg", conf=0.25, imgsz=640, verbose=False,
+)
+for result in results:
+    print(result.boxes.xyxy)  # pixel coordinates: x1, y1, x2, y2
+    print(result.boxes.conf)  # detection confidence, not emotion confidence
+```
+
+YOLO handles resizing, letterboxing, normalization, and NMS internally.
+Do not apply the emotion transform to detector inputs. Consult the
+[Ultralytics prediction documentation](https://docs.ultralytics.com/modes/predict)
+for supported inputs and result fields. Only load trusted `.pt` checkpoints;
+they may contain serialized Python objects. Also review Ultralytics' licensing
+terms before commercial distribution.
+
+Test the detector locally before uploading its release asset:
+
+```python
+face_detector = torch.hub.load(
+    ".", "dog_face_yolov8n", source="local", device="cuda",
+    model_path="model/dog_face_yolov8n.pt",
+)
+```
+
+### Combine detection and emotion prediction
+
+Load both models with one Hub call, then compose them when needed:
+
+```python
+models = torch.hub.load(
+    "puwang123/dog_emotion_inception_model:main",
+    "dog_models",
+    device="cuda",
+    precision="fp16",
+    trust_repo=True,
+)
+face_detector = models["face_detector"]
+model = models["emotion_model"]
+transform = models["emotion_transform"]
+```
+
+Each checkpoint is still downloaded and cached independently. `precision`
+controls the emotion model only. To use local checkpoints, pass
+`face_model_path="model/dog_face_yolov8n.pt"` and
+`emotion_model_path="model/convnext-fp16.pkl"`. For unpublished local code,
+use `torch.hub.load(".", "dog_models", source="local", ...)`.
+
+Apply the combined components to each detected face:
+
+```python
+import math
+
+image = Image.open("dog.jpg").convert("RGB")
+result = face_detector.predict(image, conf=0.25, verbose=False)[0]
+for box in result.boxes.xyxy.cpu().tolist():
+    x1, y1, x2, y2 = box
+    bounds = (
+        max(0, math.floor(x1)), max(0, math.floor(y1)),
+        min(image.width, math.ceil(x2)), min(image.height, math.ceil(y2)),
+    )
+    if bounds[2] <= bounds[0] or bounds[3] <= bounds[1]:
+        continue
+    face = image.crop(bounds)
+    batch = transform(face).unsqueeze(0).to("cuda")
+    with torch.inference_mode():
+        probabilities = model(batch).softmax(dim=-1)[0]
+    index = int(probabilities.argmax())
+    print(bounds, model.class_names[index], float(probabilities[index]))
+```
+
+No detections means no crop predictions; there is no silent full-image fallback.
+Evaluate emotion accuracy on face crops before adopting this pipeline: the
+emotion model was not necessarily trained on tight face crops.
+
 ## Requirements
 
 - An NVIDIA GPU and compatible host driver

@@ -20,6 +20,11 @@ artifact from an untrusted source. The bundled file's SHA-256 is
 
 ## Torch Hub development
 
+`hubconf.dog_models` loads both model families in one call and returns
+`face_detector`, `emotion_model`, and `emotion_transform` in a dictionary.
+The individual loaders remain available. `pytest -q tests/test_hub_bundle.py`
+checks argument forwarding without importing PyTorch or downloading models.
+
 The root `hubconf.py` exposes `dog_emotion_convnext`, which returns a PyTorch
 module and a preprocessing callable. `dog_emotion_hub.py` downloads immutable
 `v1.0.0` assets, validates their SHA-256 digests, and adapts the exported learner.
@@ -27,6 +32,14 @@ Use the README's `source="local"` example to validate changes before publishing.
 Run `pytest -q tests/test_hub.py` for offline adapter/cache checks; these tests
 do not download a model. Validate predictions against `python -m app --model`
 on representative images before publishing a new release.
+
+`dog_face_hub.py` adds a separate `dog_face_yolov8n` entry point using
+Ultralytics' native prediction API. Install `requirements-face.txt` alongside
+the CUDA-pinned base requirements to use both models. The ignored local
+`model/dog_face_yolov8n.pt` is preferred when present; publish that exact file as
+a `v1.0.0` release asset to enable hosted loading. Its digest is pinned in the
+loader. `pytest -q tests/test_face_hub.py` tests the loader with a fake YOLO
+object without loading real weights or downloading anything.
 
 ## Docker development workflow
 
