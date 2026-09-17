@@ -6,6 +6,62 @@ The included `model/convnext.pkl` comes from Mohit Agarwal's [Dog Emotion with C
 
 The model is a Python pickle. Only load it if you trust its Kaggle source; loading an untrusted pickle can execute arbitrary code.
 
+## Torch Hub
+
+Install the dependencies first (Torch Hub checks them but does not install them):
+
+```bash
+pip install -r requirements.txt
+```
+
+Load the release model and its exact saved preprocessing, similar to Gazelle:
+
+```python
+import torch
+from PIL import Image
+
+model, transform = torch.hub.load(
+    "puwang123/dog_emotion_inception_model:main",
+    "dog_emotion_convnext",
+    device="cuda",
+    precision="fp16",
+    trust_repo=True,
+)
+
+image = Image.open("images/angry_dog1.png").convert("RGB")
+batch = transform(image).unsqueeze(0).to("cuda")
+with torch.inference_mode():
+    probabilities = model(batch).softmax(dim=-1)[0]
+
+index = int(probabilities.argmax())
+print(model.class_names[index], float(probabilities[index]))
+```
+
+The default FP16 download uses the `v1.0.0/convnext-fp16.pkl` release asset
+and verifies its SHA-256 before deserialization. Files are cached beneath
+`torch.hub.get_dir()`. Use `precision="fp32"` for the full-precision asset,
+or `device="cpu"` for CPU inference (weights are promoted to FP32).
+The returned model accepts normalized NCHW batches and returns logits in
+`angry`, `happy`, `relaxed`, `sad` order; apply softmax once for probabilities.
+The transform accepts a filename or PIL image and returns a CHW CPU tensor.
+
+Both Torch Hub repository code and the fastai pickle must be trusted.
+`trust_repo=True` acknowledges execution of repository code; checksum verification
+detects a changed artifact but does not sandbox pickle deserialization.
+
+Test unpublished local changes without downloading repository code:
+
+```python
+model, transform = torch.hub.load(
+    ".", "dog_emotion_convnext", source="local",
+    model_path="model/convnext-fp16.pkl", device="cuda",
+)
+```
+
+Commit and push `hubconf.py`, `dog_emotion_hub.py`, and the documentation to
+`main` before using the GitHub-loading example. If repository code is already
+cached, add `force_reload=True` once to refresh it. No model re-upload is required.
+
 ## Requirements
 
 - An NVIDIA GPU and compatible host driver

@@ -23,6 +23,7 @@ def predictor_with_scores(scores):
     predictor._class_names = ("angry", "happy", "relaxed", "sad")
     predictor._to_model_image = lambda image: image
     predictor._inference_context = nullcontext
+    predictor._autocast_context = nullcontext
     predictor._lock = threading.Lock()
     return predictor
 

@@ -18,6 +18,16 @@ Because `load_learner` uses Python pickle, never replace the model with an
 artifact from an untrusted source. The bundled file's SHA-256 is
 `64ad7b0562a28bc20e5edb7916ed50aa5878d0fd630de1f3b4dc065f814cb620`.
 
+## Torch Hub development
+
+The root `hubconf.py` exposes `dog_emotion_convnext`, which returns a PyTorch
+module and a preprocessing callable. `dog_emotion_hub.py` downloads immutable
+`v1.0.0` assets, validates their SHA-256 digests, and adapts the exported learner.
+Use the README's `source="local"` example to validate changes before publishing.
+Run `pytest -q tests/test_hub.py` for offline adapter/cache checks; these tests
+do not download a model. Validate predictions against `python -m app --model`
+on representative images before publishing a new release.
+
 ## Docker development workflow
 
 Confirm Docker can access the NVIDIA GPU:
@@ -89,6 +99,29 @@ docker run --rm --gpus all \
 Use a representative production image and avoid running other GPU workloads
 during the benchmark. The first model load is intentionally reported as cold
 startup; warm inference statistics exclude model loading and warmup.
+
+## Convert the model to FP16
+
+Mount the model directory as writable, enter the container, and run:
+
+```bash
+python scripts/convert_model_fp16.py \
+  /app/model/convnext.pkl \
+  /app/model/convnext-fp16.pkl
+```
+
+If only `app/` is mounted during development, also mount `scripts/`:
+
+```bash
+-v "$(pwd)/scripts:/app/scripts:ro"
+```
+
+The converter refuses to overwrite an existing output unless `--force` is
+provided. A fastai learner is a Python pickle, so only convert a model from a
+trusted source. Test predictions and benchmark the FP16 output before replacing
+the original FP32 model. If a previous conversion attempt already created the
+output file, rerun with `--force`. The predictor detects FP16 weights and uses
+CUDA autocast so float32 image tensors are safely accepted by the FP16 model.
 
 Run fast unit tests with `pytest -q`. They use a fake model and do not require a GPU.
 

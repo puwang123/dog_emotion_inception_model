@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import threading
+from contextlib import nullcontext
 from pathlib import Path
 from typing import BinaryIO, Callable, ContextManager
 
@@ -45,6 +46,19 @@ class DogEmotionPredictor:
                 device = torch.device("cuda")
                 self._learner.model.to(device)
                 self._learner.dls.to(device)
+                model_dtype = next(self._learner.model.parameters()).dtype
+                self._autocast_context: Callable[[], ContextManager] = (
+                    lambda: torch.autocast(
+                        device_type="cuda",
+                        dtype=torch.float16,
+                        enabled=model_dtype == torch.float16,
+                    )
+                )
+            else:
+                # Many CPU operations do not support FP16. Explicit CPU
+                # fallback therefore restores FP32 weights before inference.
+                self._learner.model.float()
+                self._autocast_context = nullcontext
 
             class_names = tuple(str(name) for name in self._learner.dls.vocab)
             if class_names != EXPECTED_CLASS_NAMES:
@@ -70,7 +84,11 @@ class DogEmotionPredictor:
             raise PredictionError("The input file is not a valid image.") from exc
 
         try:
-            with self._lock, self._inference_context():
+            with (
+                self._lock,
+                self._inference_context(),
+                self._autocast_context(),
+            ):
                 _label, _index, scores = self._learner.predict(
                     self._to_model_image(image)
                 )
